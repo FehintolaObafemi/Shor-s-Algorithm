@@ -18,7 +18,7 @@ print('\n Shors Algorithm')
 print('--------------------')
 print('\nExecuting...\n')
 
-factors = Shor(21) #Function to run Shor's algorithm  
+factors = Shor(989) #Function to run Shor's algorithm  
 
 result_dict = factors.run(QuantumInstance(backend, shots=10, skip_qobj_validation=False))
 result = result_dict['factors'] # Get factors from results
