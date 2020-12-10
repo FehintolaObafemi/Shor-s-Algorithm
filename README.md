@@ -8,3 +8,7 @@ Run Shor's algorithm to factor "large" prime numbers (>=15) (eg. 899)
 a) On quantum simulators
 
 b) On quantum computers
+
+Upload your code to github and provide a link.
+
+Provide a demonstration in class.
