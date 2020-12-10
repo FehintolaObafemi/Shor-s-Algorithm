@@ -14,7 +14,7 @@ print('\n Shors Algorithm')
 print('--------------------')
 print('\nExecuting...\n')
 
-N = 899
+N = 1168
 a = 3
 
 factors = helper(N, a)
