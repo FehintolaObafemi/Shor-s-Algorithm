@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "complex.C": "cpp",
+        "qureg.C": "cpp",
+        "shor.C": "cpp",
+        "util.C": "cpp"
+    }
+}
