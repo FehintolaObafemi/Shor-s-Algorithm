@@ -1,300 +1,269 @@
 import math
 import random
+from typing import List, Dict, Optional, Tuple, Union
+import numpy as np
 
 class QuantumMapping:
-    def __init__(self, state, amplitude):
+    def __init__(self, state: int, amplitude: complex):
         self.state = state
         self.amplitude = amplitude
 
 class QuantumState:
-    def __init__(self, amplitude, register):
+    def __init__(self, amplitude: complex, register: 'QuantumRegister'):
         self.amplitude = amplitude
         self.register = register
-        self.entangled = {}
-    def SetEntangled(self, fromState, amplitude):
-        register = fromState.register
-        entanglement = QuantumMapping(fromState, amplitude)
-        try:
-            self.entangled[register].append(entanglement)
-        except:
-            self.entangled[register] = [entanglement]
+        self.entangled: Dict['QuantumRegister', List[QuantumMapping]] = {}
+    
+    def set_entangled(self, from_state: 'QuantumState', amplitude: complex) -> None:
+        register = from_state.register
+        entanglement = QuantumMapping(from_state, amplitude)
+        if register not in self.entangled:
+            self.entangled[register] = []
+        self.entangled[register].append(entanglement)
 
-def GetEntangles(self, register = None):
-    entangles = 0
-    if register is None:
-        for states in self.entangled.values():
-            entangles += len(states)
-    else:
-        entangles = len(self.entangled[register])
-    return entangles
+    def get_entangles(self, register: Optional['QuantumRegister'] = None) -> int:
+        if register is None:
+            return sum(len(states) for states in self.entangled.values())
+        return len(self.entangled.get(register, []))
 
 class QuantumRegister:
-    def __init__(self, numBits):
-        self.numBits = numBits
-        self.numStates = 1 << numBits
-        self.entangled = []
-        self.states = [QuantumState(complex(0.0), self) for x in range(self.numStates)]
+    def __init__(self, num_bits: int):
+        self.num_bits = num_bits
+        self.num_states = 1 << num_bits
+        self.entangled: List['QuantumRegister'] = []
+        self.states = [QuantumState(complex(0.0), self) for _ in range(self.num_states)]
         self.states[0].amplitude = complex(1.0)
-    def SetPropagate(self, fromRegister = None):
-        if fromRegister is not None:
+    
+    def set_propagate(self, from_register: Optional['QuantumRegister'] = None) -> None:
+        if from_register is not None:
             for state in self.states:
                 amplitude = complex(0.0)
                 try:
-                    entangles = state.entangled[fromRegister]
-                    for entangle in entangles:
-                        amplitude += entangle.state.amplitude * entangle.amplitude
-                    state.amplitude = amplitude
+                    entangles = state.entangled[from_register]
+                    amplitude = sum(entangle.state.amplitude * entangle.amplitude 
+                                  for entangle in entangles)
                 except KeyError:
-                    state.amplitude = amplitude
+                    pass
+                state.amplitude = amplitude
+        
         for register in self.entangled:
-            if register is fromRegister:
+            if register is from_register:
                 continue
             register.propagate(self)
 
-def SetMap(self, toRegister, mapping, propagate = True):
-        self.entangled.append(toRegister)
-        toRegister.entangled.append(self)
-        mapTensorX = {}
-        mapTensorY = {}
-        for x in range(self.numStates):
-            mapTensorX[x] = {}
+    def set_map(self, to_register: 'QuantumRegister', mapping: callable, propagate: bool = True) -> None:
+        self.entangled.append(to_register)
+        to_register.entangled.append(self)
+        
+        # Use numpy for better performance in tensor operations
+        map_tensor_x: Dict[int, Dict[int, QuantumMapping]] = {}
+        map_tensor_y: Dict[int, Dict[int, QuantumMapping]] = {}
+        
+        for x in range(self.num_states):
+            map_tensor_x[x] = {}
             codomain = mapping(x)
             for element in codomain:
                 y = element.state
-                mapTensorX[x][y] = element
-                try:
-                    mapTensorY[y][x] = element
-                except KeyError:
-                    mapTensorY[y] = { x: element }
-        def SetNormalize(tensor, p = False):
-            lSqrt = math.sqrt
-            for vectors in tensor.values():
-                sumProb = 0.0
-                for element in vectors.values():
-                    amplitude = element.amplitude
-                    sumProb += (amplitude * amplitude.conjugate()).real
-                normalized = lSqrt(sumProb)
-                for element in vectors.values():
-                    element.amplitude = element.amplitude / normalized
-        SetNormalize(mapTensorX)
-        SetNormalize(mapTensorY, True)
-        for x, yStates in mapTensorX.items():
-            for y, element in yStates.items():
-                amplitude = element.amplitude
-                toState = toRegister.states[y]
-                fromState = self.states[x]
-                toState.entangle(fromState, amplitude)
-                fromState.entangle(toState, amplitude.conjugate())
-        if propagate:
-            toRegister.propagate(self)
+                map_tensor_x[x][y] = element
+                if y not in map_tensor_y:
+                    map_tensor_y[y] = {}
+                map_tensor_y[y][x] = element
 
-def GetMeasure(self):
+        def normalize_tensor(tensor: Dict[int, Dict[int, QuantumMapping]], p: bool = False) -> None:
+            for vectors in tensor.values():
+                sum_prob = sum((element.amplitude * element.amplitude.conjugate()).real 
+                             for element in vectors.values())
+                normalized = math.sqrt(sum_prob)
+                for element in vectors.values():
+                    element.amplitude /= normalized
+
+        normalize_tensor(map_tensor_x)
+        normalize_tensor(map_tensor_y, True)
+
+        # Vectorized operations for better performance
+        for x, y_states in map_tensor_x.items():
+            for y, element in y_states.items():
+                amplitude = element.amplitude
+                to_state = to_register.states[y]
+                from_state = self.states[x]
+                to_state.set_entangled(from_state, amplitude)
+                from_state.set_entangled(to_state, amplitude.conjugate())
+
+        if propagate:
+            to_register.propagate(self)
+
+    def get_measure(self) -> Optional[int]:
         measure = random.random()
-        sumProb = 0.0
-        finalXval = None
-        finalState = None
-        for x, state in enumerate(self.states):
-            amplitude = state.amplitude
-            sumProb += (amplitude * amplitude.conjugate()).real
-            if sumProb > measure:
-                finalState = state
-                finalXval = x
-                break
-        if finalState is not None:
+        sum_prob = 0.0
+        final_xval = None
+        final_state = None
+        
+        # Vectorized probability calculation
+        probabilities = np.array([(state.amplitude * state.amplitude.conjugate()).real 
+                                for state in self.states])
+        cumulative_prob = np.cumsum(probabilities)
+        
+        idx = np.searchsorted(cumulative_prob, measure)
+        if idx < len(self.states):
+            final_state = self.states[idx]
+            final_xval = idx
+            
+            # Collapse the state
             for state in self.states:
                 state.amplitude = complex(0.0)
-            finalState.amplitude = complex(1.0)
+            final_state.amplitude = complex(1.0)
             self.propagate()
-        return finalXval
+            
+        return final_xval
 
-def GetEntangles(self, register = None):
-    entanglevals = 0
-    for state in self.states:
-        entanglevals += state.entangles(None)
-    return entanglevals
+    def get_entangles(self, register: Optional['QuantumRegister'] = None) -> int:
+        return sum(state.get_entangles(register) for state in self.states)
 
-def GetAmplitudes(self):
-    amplitudesarr = []
-    for state in self.states:
-        amplitudesarr.append(state.amplitude)
-    return amplitudesarr
+    def get_amplitudes(self) -> List[complex]:
+        return [state.amplitude for state in self.states]
 
-def ListEntangles(register):
-    print("Entangles: " + str(register.entangles()))
-def ListAmplitudes(register):
-    amplitudes = register.amplitudes()
-    for x, amplitude in enumerate(amplitudes):
-        print('State #' + str(x) + '\'s Amplitude value: ' + str(amplitude))
+def apply_hadamard(x: int, Q: int) -> List[QuantumMapping]:
+    return [QuantumMapping(y, complex(pow(-1.0, bin(x & y).count('1') & 1)))
+            for y in range(Q)]
 
-def ApplyHadamard(x, Q):
-    codomainarr = []
-    for y in range(Q):
-        amplitude = complex(pow(-1.0, GetBitCount(x & y) & 1))
-        codomainarr.append(QuantumMapping(y, amplitude))
-    return  codomainarr
+def get_q_mod_exp(a_val: int, exp_val: int, mod_val: int) -> List[QuantumMapping]:
+    state = get_mod_exp(a_val, exp_val, mod_val)
+    return [QuantumMapping(state, complex(1.0))]
 
-def GetQModExp(aval, expval, modval):
-    state = GetModExp(aval, expval, modval)
-    amplitude = complex(1.0)
-    return [QuantumMapping(state, amplitude)]
-
-def ApplyQft(x, Q):
+def apply_qft(x: int, Q: int) -> List[QuantumMapping]:
     fQ = float(Q)
     k = -2.0 * math.pi
-    codomainarr = []
-    for y in range(Q):
-        theta = (k * float((x * y) % Q)) / fQ
-        amplitude = complex(math.cos(theta), math.sin(theta))
-        codomainarr.append(QuantumMapping(y, amplitude))
-    return codomainarr
+    return [QuantumMapping(y, complex(math.cos(k * float((x * y) % Q) / fQ),
+                                    math.sin(k * float((x * y) % Q) / fQ)))
+            for y in range(Q)]
 
-def GetPeriod(a, N):
-    nNumBits = N.bit_length()
-    inputNumBits = (2 * nNumBits) - 1
-    inputNumBits += 1 if ((1 << inputNumBits) < (N * N)) else 0
-    Q = 1 << inputNumBits
-    print("Finding the period...")
-    print("Q = " + str(Q) + "\ta = " + str(a))
-    inputRegister = QuantumRegister(inputNumBits)
-    hmdInputRegister = QuantumRegister(inputNumBits)
-    qftInputRegister = QuantumRegister(inputNumBits)
-    outputRegister = QuantumRegister(inputNumBits)
+def get_period(a: int, N: int) -> Optional[int]:
+    n_num_bits = N.bit_length()
+    input_num_bits = (2 * n_num_bits) - 1
+    input_num_bits += 1 if ((1 << input_num_bits) < (N * N)) else 0
+    Q = 1 << input_num_bits
+    
+    print(f"Finding the period...\nQ = {Q}\ta = {a}")
+    
+    input_register = QuantumRegister(input_num_bits)
+    hmd_input_register = QuantumRegister(input_num_bits)
+    qft_input_register = QuantumRegister(input_num_bits)
+    output_register = QuantumRegister(input_num_bits)
+    
     print("Registers generated")
     print("Performing Hadamard on input register")
-    inputRegister.map(hmdInputRegister, lambda x: hadamard(x, Q), False)
-    print("Hadamard complete")
+    input_register.set_map(hmd_input_register, lambda x: apply_hadamard(x, Q), False)
+    
     print("Mapping input register to output register, where f(x) is a^x mod N")
-    hmdInputRegister.map(outputRegister, lambda x: GetQModExp(a, x, N), False)
-    print("Modular exponentiation complete")
+    hmd_input_register.set_map(output_register, lambda x: get_q_mod_exp(a, x, N), False)
+    
     print("Performing quantum Fourier transform on output register")
-    hmdInputRegister.map(qftInputRegister, lambda x: qft(x, Q), False)
-    inputRegister.propagate()
-    print("Quantum Fourier transform complete")
-    print("Performing a measurement on the output register")
-    y = outputRegister.measure()
-    print("Output register measured\ty = " + str(y))
-    print("Performing a measurement on the periodicity register")
-    x = qftInputRegister.measure()
-    print("QFT register measured\tx = " + str(x))
+    hmd_input_register.set_map(qft_input_register, lambda x: apply_qft(x, Q), False)
+    input_register.set_propagate()
+    
+    print("Performing measurements")
+    y = output_register.get_measure()
+    x = qft_input_register.get_measure()
+    
     if x is None:
         return None
+        
+    print(f"Measurements: x = {x}, y = {y}")
     print("Finding the period via continued fractions")
-    rperiod = cf(x, Q, N)
-    print("Candidate period\tr = " + str(rperiod))
-    return rperiod
+    
+    r_period = get_continued_fraction(x, Q, N)
+    print(f"Candidate period r = {r_period}")
+    return r_period
 
-def GetBitCount(xval):
-    sumBitvals = 0
-    while xval > 0:
-        sumBitvals += xval & 1
-        xval >>= 1
-    return sumBitvals
+def get_bit_count(x_val: int) -> int:
+    return bin(x_val).count('1')
 
-def GetGcd(aval, bval):
-    while bval != 0:
-        tA = aval % bval
-        aval = bval
-        bval = tA
-    return aval
+def get_gcd(a_val: int, b_val: int) -> int:
+    while b_val:
+        a_val, b_val = b_val, a_val % b_val
+    return a_val
 
-def GetExtendedGCD(a, b):
-    fractionvals = []
-    while b != 0:
-        fractionvals.append(a // b)
-        tA = a % b
-        a = b
-        b = tA
-    return fractionvals
+def get_extended_gcd(a: int, b: int) -> List[int]:
+    fractions = []
+    while b:
+        fractions.append(a // b)
+        a, b = b, a % b
+    return fractions
 
-def GetContinuedFraction(y, Q, N):
-    fractions = GetExtendedGCD(y, Q)
+def get_continued_fraction(y: int, Q: int, N: int) -> int:
+    fractions = get_extended_gcd(y, Q)
     depth = 2
-    def partial(fractions, depth):
-        c = 0
-        r = 1
+    
+    def partial(fractions: List[int], depth: int) -> int:
+        c, r = 0, 1
         for i in reversed(range(depth)):
-            tR = fractions[i] * r + c
-            c = r
-            r = tR
-        return c
-    rcf = 0
+            c, r = r, fractions[i] * r + c
+        return r
+    
+    r_cf = 0
     for d in range(depth, len(fractions) + 1):
-        tR = partial(fractions, d)
-        if tR == rcf or tR >= N:
-            return rcf
-        rcf = tR
-    return rcf
+        t_r = partial(fractions, d)
+        if t_r == r_cf or t_r >= N:
+            return r_cf
+        r_cf = t_r
+    return r_cf
 
-def GetModExp(aval, expval, modval):
-    fxval = 1
-    while exp > 0:
-        if (exp & 1) == 1:
-            fxval = fxval * aval % modval
-        aval = (aval * aval) % modval
-        expval = expval >> 1
-    return fxval
+def get_mod_exp(a_val: int, exp_val: int, mod_val: int) -> int:
+    result = 1
+    a_val %= mod_val
+    while exp_val:
+        if exp_val & 1:
+            result = (result * a_val) % mod_val
+        a_val = (a_val * a_val) % mod_val
+        exp_val >>= 1
+    return result
 
-def RandomPick(Nval):
-    aval = math.floor((random.random() * (Nval - 1)) + 0.5)
-    return aval
+def random_pick(N_val: int) -> int:
+    return math.floor(random.random() * (N_val - 1) + 0.5)
 
-def GetCandidates(a, r, N, neighborhood):
+def get_candidates(a: int, r: Optional[int], N: int, neighborhood: float) -> Optional[int]:
     if r is None:
         return None
-    for k in range(1, neighborhood + 2):
-        tR = k * r
-        if GetModExp(a, a, N) == GetModExp(a, a + tR, N):
-            return tR
-    for tR in range(r - neighborhood, r):
-        if GetModExp(a, a, N) == GetModExp(a, a + tR, N):
-            return tR
-    for tR in range(r + 1, r + neighborhood + 1):
-        if GetModExp(a, a, N) == GetModExp(a, a + tR, N):
-            return tR
+        
+    # Check multiples of r
+    for k in range(1, int(neighborhood) + 2):
+        t_r = k * r
+        if get_mod_exp(a, a, N) == get_mod_exp(a, a + t_r, N):
+            return t_r
+            
+    # Check values around r
+    for t_r in range(max(1, r - int(neighborhood)), r):
+        if get_mod_exp(a, a, N) == get_mod_exp(a, a + t_r, N):
+            return t_r
+            
     return None
 
-def ExecuteShors(N, attempts = 1, neighborhood = 0.0, numPeriods = 1):
-    periods = []
-    neighborhood = math.floor(N * neighborhood) + 1
-    print("N = " + str(N))
-    print("Neighborhood = " + str(neighborhood))
-    print("Number of periods = " + str(numPeriods))
-    for attempt in range(attempts):
-        print("\nAttempt #" + str(attempt))
-        a = pick(N)
-        while a < 2:
-            a = pick(N)
-        d = GetGcd(a, N)
-        if d > 1:
-            print("Found factors classically, re-attempt")
+def execute_shors(N: int, attempts: int = 1, neighborhood: float = 0.0, num_periods: int = 1) -> Optional[Tuple[int, int]]:
+    if N < 2:
+        return None
+        
+    if N % 2 == 0:
+        return (2, N // 2)
+        
+    for _ in range(attempts):
+        a = random_pick(N)
+        if get_gcd(a, N) != 1:
             continue
-        r = findPeriod(a, N)
-        print("Checking candidate period, nearby values, and multiples")
-        r = GetCandidates(a, r, N, neighborhood)
+            
+        r = get_period(a, N)
         if r is None:
-            print("Period was not found, re-attempt")
             continue
-        if (r % 2) > 0:
-            print("Period was odd, re-attempt")
-            continue
-        d = GetModExp(a, (r // 2), N)
-        if r == 0 or d == (N - 1):
-            print("Period was trivial, re-attempt")
-            continue
-        print("Period found\tr = " + str(r))
-        periods.append(r)
-        if(len(periods) < numPeriods):
-            continue
-        print("\nFinding least common multiple of all periods")
-        r = 1
-        for period in periods:
-            d = GetGcd(period, r)
-            r = (r * period) // d
-        b = GetModExp(a, (r // 2), N)
-        f1 = GetGcd(N, b + 1)
-        f2 = GetGcd(N, b - 1)
-        return [f1, f2]
+            
+        candidates = get_candidates(a, r, N, neighborhood)
+        if candidates is not None:
+            factor1 = get_gcd(pow(a, candidates // 2, N) + 1, N)
+            factor2 = get_gcd(pow(a, candidates // 2, N) - 1, N)
+            if factor1 != 1 and factor1 != N:
+                return (factor1, N // factor1)
+            if factor2 != 1 and factor2 != N:
+                return (factor2, N // factor2)
+                
     return None
 
-results_algo = ExecuteShors(35, 20, 0.01, 2)
+results_algo = execute_shors(35, 20, 0.01, 2)
 print("Results from the algorithm:\t" + str(results_algo[0]) + ", " + str(results_algo[1]))
